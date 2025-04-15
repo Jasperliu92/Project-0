@@ -1,0 +1,198 @@
+---
+title: "CaseStuday1"
+author: "Chuan Liu"
+date: "2025-04-07"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Case Study 1: How does a bike-share navigate speedy success?
+
+In this case study, we will perform data analysis for a fictional bike-share company in order to help them come up with better marketing plans that will effectively bring more platform users. The company provided their 2-year shared bike usage data for both their members and non-member users.
+
+#### ASK：Questions to be addressed
+
+1.  How do annual members and casual riders use Cyclistic bikes differently?
+2.  Why would casual riders buy Cyclistic annual memberships?
+3.  How can Cyclistic use digital media to influence casual riders to become members?
+
+#### Prepare
+
+1.Access data, this is public data from website: <https://divvy-tripdata.s3.amazonaws.com/index.html>, given by the class, we will take 2019-Q1 and 2020-Q1 cyclistic data.
+
+2.The data consists of 2 csv files. The files for the 2019-Q1 and 2020-Q1
+
+3.The data is first-party data collected by Cyclist so there is low chance of bias but due to it being the companies own data the credibility is very high.
+
+4.The data is open source and covered by licence : <https://divvybikes.com/data-license-agreement>
+
+#### Process
+
+We will start our analyze by preparing the R system first:
+
+```{r prepare_packages}
+library(tidyverse)
+library(conflicted)
+library(ggplot2)
+library(readr)
+```
+
+We import our Data sets to R system and check the column name for each column:
+
+```{r import_datasets}
+q1_2019 <- read_csv("Divvy_2019_Q1.csv")
+q1_2020 <- read_csv("Divvy_2020_Q1.csv")
+colnames(q1_2019)
+colnames(q1_2020)
+```
+
+We found that some of the corresponding data in two csv files has different names, so we will need to change these names to the same one:
+
+```{r rename_column_name_in_Divvy_2019}
+q1_2019 <- 
+rename(q1_2019,
+ride_id = trip_id,
+started_at = start_time,
+ended_at = end_time,
+rideable_type = bikeid,
+start_station_name = from_station_name,
+start_station_id = from_station_id,
+end_station_id = to_station_id,
+end_station_name = to_station_name,
+member_casual = usertype)
+```
+
+Next, we check the data character for each column in two files, we found that the character of "ride_id" and "rideable_type" are different between to files, we need fix this too:
+
+```{r modify_character}
+str(q1_2019)
+str(q1_2020)
+q1_2019 <- mutate(q1_2019, ride_id = as.character(ride_id),
+rideable_type = as.character(rideable_type))
+```
+
+Now we have two files identical， we can now combine two files into one file by simply add all rows together and delete the non-overlapping columns of a table , and check the information in our new file:
+
+```{r combine_files}
+q1_all <- bind_rows(q1_2019, q1_2020)
+q1_all <- q1_all %>% 
+select(-c(start_lat, start_lng, end_lat, end_lng, birthyear, gender, "tripduration"))
+colnames(q1_all)
+nrow(q1_all)
+dim(q1_all)
+head(q1_all)
+str(q1_all) 
+summary(q1_all)
+```
+
+#### Data Clean
+
+First, we change the information in each cell on column "number_casual" to unified content, avoid any misunderstanding:
+
+```{r change_cell_content}
+q1_all <- 
+mutate(q1_all, member_casual = recode(member_casual, "Subscriber" = "member", "Customer" = "casual"))
+table(q1_all$member_casual)
+```
+
+Then, we split the "started_date" into details by adding some new columns (month,day,year,day of week) and calculate the total ride length for each ride and show it in a new column named "ride_length":
+
+```{r add_new_columns}
+q1_all$started_date <- as.Date(q1_all$started_at)
+q1_all$started_month <- format(q1_all$started_date, "%m")
+q1_all$started_day <- format(q1_all$started_date, "%d")
+q1_all$started_year <- format(q1_all$started_date, "%Y")
+q1_all$started_day_of_week <- format(q1_all$started_date, "%A")
+q1_all$ride_length <- difftime(q1_all$ended_at,q1_all$started_at)
+q1_all$ride_length <- as.numeric(q1_all$ride_length)
+```
+
+Next, The data frame includes a few hundred entries when bikes were taken out of docks and checked for quality by Divvy or ride_length was negative, so we need to remove them:
+
+```{r remove_useless_data_frame}
+q1_all<- 
+q1_all[!(q1_all$start_station_name == "HQ QR"|q1_all$ride_length < 0),]
+```
+
+#### Analyze
+
+Descriptive analysis on ride_length, and compare members and casual users by max,min,mean,media separately:
+
+```{r make_compertion}
+summary(q1_all$ride_length)
+aggregate(q1_all$ride_length ~ q1_all$member_casual, FUN = mean)
+aggregate(q1_all$ride_length ~ q1_all$member_casual, FUN = median)
+aggregate(q1_all$ride_length ~ q1_all$member_casual, FUN = max)
+aggregate(q1_all$ride_length ~ q1_all$member_casual, FUN = min)
+```
+
+Then see the average ride time by each day for members vs casual users ordered by day of week:
+
+```{r Average_ride_time_comperation}
+q1_all$started_day_of_week <- 
+ordered(q1_all$started_day_of_week,
+levels = c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"))
+aggregate(q1_all$ride_length ~ q1_all$member_casual + q1_all$started_day_of_week, FUN = mean)
+```
+
+Generate a table for analyze ridership data by type and weekday:
+
+```{r create_table_for_analyze_ridership_data_by_type_and_weekday}
+q1_all %>% 
+mutate(weekday = wday(started_at, label = TRUE)) %>%
+group_by(member_casual, weekday) %>%
+summarise(number_of_rides = n(), average_duration = mean(ride_length)) %>%
+arrange(member_casual, weekday)
+```
+
+## Including Plots
+
+Plot 1: Visualize the number of rides by rider type
+
+```{r Visualize_the_number_of_rides_by_rider_type}
+q1_all %>% 
+mutate(weekday = wday(started_at, label = TRUE)) %>%
+group_by(member_casual, weekday) %>%
+summarise(number_of_rides = n(),average_duration = mean(ride_length)) %>%
+arrange(member_casual, weekday) %>%
+ggplot(aes(x = weekday, y = number_of_rides, group = member_casual, color = member_casual)) +
+geom_line() + geom_point() + labs(title = "Total rides", x = "Weekdays", y = "Total Rides", color = "User Category") 
+```
+
+Plot 2: Visualization for average duration
+
+```{r visualization_for_avg_duration}
+q1_all %>%
+mutate(weekday = wday(started_at, label = TRUE)) %>%
+group_by(member_casual, weekday) %>%
+summarise(number_of_rides = n(),average_duration = mean(ride_length)) %>%
+arrange(member_casual, weekday) %>%
+ggplot(aes(x = weekday, y = average_duration, group = member_casual, color = member_casual)) + geom_line() + geom_point() + labs(title = "Average Duration on Weekday", x = "Weekdays", y = "Average Duration", color = "User Category")
+```
+
+#### Share
+
+1.How do annual members and casual riders use Cyclistic bikes differently?
+
+As illustrated in the figures above, casual riders have higher “average_ride_length”, but with less total “number_of_rides”. Casual riders tend to have a higher average ride length, indicating strong demand and high potential for conversion to membership.
+
+2.  Why would casual riders buy Cyclistic annual memberships?
+
+To leverage this, we can target advertising in areas with high casual rider density to increase awareness of membership benefits  (There are location information in the original data file, but for this case study, there are more than 50% location info missing, so I did not include in my analysis this time). Additionally, offering discounts based on average ride duration would appeal to high-usage casual riders, making membership more cost-effective and attractive to them.
+
+3.  How can Cyclistic use digital media to influence casual riders to become members?
+
+Focus digital media efforts on areas with high casual rider activity , and offer membership discounts based on “average_ride_length” to incentive conversion.
+
+#### Act
+
+Based on current data analysis, I recommend the following promotional strategy to encourage 
+membership sign-ups and retain existing members: 
+
+Offer tiered rewards based on members’ annual average ride length: 
+Tier 1: Ride over XXX km/year – receive [e.g., partial membership discount / gift / credit] 
+Tier 2: Ride over XXXX km/year – receive [e.g., larger discount / premium reward] 
+Tier 3: Ride over XXXXX km/year – receive [e.g., full discount / exclusive gift / high-value credit] 
+This performance-based incentive encourages regular use and strengthens member loyalty.
